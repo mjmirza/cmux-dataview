@@ -19,7 +19,7 @@ DEFAULTS = {
     "delimiter": "auto",
     "header": "auto",
     "bigFile": {"thresholdMB": 50, "behaviour": "preview", "previewRows": 50000},
-    "idleMinutes": 30,
+    "idleMinutes": 10,
     "focusOnOpen": False,
     "exportDir": "~/Downloads",
     "liveReload": True,
