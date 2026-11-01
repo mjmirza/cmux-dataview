@@ -19,6 +19,7 @@ Settings live in `~/.config/cmux-dataview/config.json`. Change them in the viewe
 | `liveReload` | `true` | `true`, `false` | Refresh the table when the file changes on disk |
 | `focusOnOpen` | `false` | `true`, `false` | Move focus to the table when it opens |
 | `exportDir` | `~/Downloads` | any folder | Where Export CSV and Export for Excel save |
+| `diagrams` | `true` | `true`, `false` | Open `.mmd`, `.mermaid`, `.excalidraw` and `.sketch` in the diagram view |
 | `idleMinutes` | `10` | 1 to 1440 | Stop the helper after this many idle minutes |
 
 ## Environment overrides

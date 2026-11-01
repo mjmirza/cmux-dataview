@@ -114,6 +114,7 @@ main() {
     --version) echo "$VERSION"; return 0 ;;
     --doctor) doctor; return $? ;;
     --stop) stop_server; return 0 ;;
+    --setup-diagrams) bash "$LIB/setup-diagrams.sh"; return $? ;;
     --config)
       local p; p="$("$PY" -I "$LIB/dataview_config.py" init)" && echo "$p" && /usr/bin/open -t "$p"; return 0 ;;
     --) shift ;;

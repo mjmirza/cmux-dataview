@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src blob:; form-action 'none'; base-uri 'none'">
+<title>Diagram</title>
+<style>
+:root { --bg: #fafaf9; --panel: #ffffff; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --accent: #15803d; --warn: #b45309; --err: #b91c1c; }
+:root[data-theme="dark"] { --bg: #1f1f1e; --panel: #282826; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3936; --accent: #4ade80; --warn: #fbbf24; --err: #f87171; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px -apple-system, BlinkMacSystemFont, "Inter", sans-serif; overscroll-behavior: none; }
+body { display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
+header h1 { font-size: 15px; margin: 0; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+.chip.dirty { color: var(--warn); border-color: var(--warn); }
+button { font: inherit; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button[disabled] { opacity: .5; cursor: default; }
+main { flex: 1; min-height: 0; display: flex; }
+#src { width: 40%; min-width: 220px; border: 0; border-right: 1px solid var(--line); resize: horizontal; padding: 12px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel); color: var(--fg); outline: none; }
+#out { flex: 1; overflow: auto; padding: 16px; display: flex; align-items: flex-start; justify-content: center; }
+#out svg { max-width: 100%; height: auto; }
+#ex { flex: 1; min-width: 0; }
+.msg { margin: 40px auto; max-width: 560px; line-height: 1.5; color: var(--muted); }
+.msg code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--fg); }
+.err { color: var(--err); white-space: pre-wrap; font: 12px ui-monospace, Menlo, monospace; }
+#sketch { max-width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,.12); background: #fff; }
+#toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Loading</h1>
+  <span class="chip" id="kind"></span>
+  <span class="chip" id="state" hidden>Unsaved changes</span>
+  <button id="bReveal" type="button">Reveal in Finder</button>
+  <button id="bSave" type="button" class="primary" hidden>Save</button>
+</header>
+<main id="main"><div class="msg">Loading the file.</div></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(function () {
+  "use strict";
+  var token = new URLSearchParams(location.search).get("t") || "";
+  var id = location.pathname.split("/").pop();
+  var info = null, dirty = false, getContent = null, saving = false;
+  function $(x) { return document.getElementById(x); }
+  function api(path, body) {
+    var opt = { headers: { "X-Token": token, "Content-Type": "application/json" } };
+    if (body !== undefined) { opt.method = "POST"; opt.body = JSON.stringify(body); }
+    return fetch(path, opt).then(function (r) { return r.json().then(function (j) { j._status = r.status; return j; }); });
+  }
+  function toast(text) { var t = $("toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(function () { t.classList.remove("show"); }, 2600); }
+  function setDirty(v) { dirty = v; $("state").hidden = !v; $("state").className = v ? "chip dirty" : "chip"; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function loadScript(src) { return new Promise(function (ok, bad) { var s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = function () { bad(new Error("Could not load " + src)); }; document.head.appendChild(s); }); }
+  function loadCss(href) { var l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; document.head.appendChild(l); }
+  function needSetup() { $("main").innerHTML = '<div class="msg">The diagram editors are not installed yet. Run <code>cmux-dataview --setup-diagrams</code> once in a terminal, then double-click the file again. It downloads about 30 MB of open-source code and works offline afterwards.</div>'; }
+
+  function save(force) {
+    if (!getContent || saving) return;
+    saving = true; $("bSave").disabled = true;
+    api("/api/diagram/save", { id: id, text: getContent(), mtime: info.mtime, force: !!force }).then(function (r) {
+      saving = false; $("bSave").disabled = false;
+      if (r._status === 409 && r.conflict) {
+        if (confirm("This file changed on disk after you opened it. Overwrite it with your version?")) save(true);
+        return;
+      }
+      if (r._status !== 200) { toast(r.error || "Save failed"); return; }
+      info.mtime = r.mtime; setDirty(false); toast("Saved");
+    }).catch(function () { saving = false; $("bSave").disabled = false; toast("Save failed, the helper is not answering"); });
+  }
+
+  function mermaidView() {
+    if (!info.vendorReady) return needSetup();
+    $("main").innerHTML = '<textarea id="src" spellcheck="false" aria-label="Mermaid source"></textarea><div id="out" aria-live="polite"></div>';
+    var src = $("src"); src.value = info.text;
+    getContent = function () { return src.value; };
+    loadScript("/vendor/mermaid.min.js").then(function () {
+      var dark = document.documentElement.getAttribute("data-theme") === "dark";
+      var vars = dark
+        ? { primaryColor: "#1f3a2a", primaryBorderColor: "#4ade80", primaryTextColor: "#f5f5f4", lineColor: "#a8a29e", secondaryColor: "#282826", tertiaryColor: "#282826", background: "#1f1f1e", edgeLabelBackground: "#1f1f1e" }
+        : { primaryColor: "#dcfce7", primaryBorderColor: "#15803d", primaryTextColor: "#1c1917", lineColor: "#57534e", secondaryColor: "#f5f5f4", tertiaryColor: "#ffffff", background: "#ffffff", edgeLabelBackground: "#fafaf9" };
+      window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base", themeVariables: vars });
+      var n = 0, timer = null;
+      function draw() {
+        var code = src.value, me = ++n;
+        window.mermaid.render("m" + me, code).then(function (res) { if (me === n) $("out").innerHTML = res.svg; })
+          .catch(function (e) { if (me === n) $("out").innerHTML = '<div class="err">' + esc(e && e.message ? e.message : e) + "</div>"; });
+      }
+      src.addEventListener("input", function () { setDirty(true); clearTimeout(timer); timer = setTimeout(draw, 250); });
+      draw();
+    }).catch(function (e) { $("out").innerHTML = '<div class="err">' + esc(e.message) + "</div>"; });
+  }
+
+  function excalidrawView() {
+    if (!info.vendorReady) return needSetup();
+    $("main").innerHTML = '<div id="ex"></div>';
+    window.EXCALIDRAW_ASSET_PATH = "/vendor/excalidraw/";
+    loadCss("/vendor/excalidraw/excalidraw.css");
+    var initial = null;
+    try { initial = info.text.trim() ? JSON.parse(info.text) : null; } catch (e) { $("main").innerHTML = '<div class="msg err">This file is not valid Excalidraw JSON. ' + esc(e.message) + "</div>"; return; }
+    loadScript("/vendor/excalidraw/excalidraw.js").then(function () {
+      var X = window.DataviewExcalidraw, xapi = null, ready = false;
+      var dark = document.documentElement.getAttribute("data-theme") === "dark";
+      var data = initial ? { elements: initial.elements || [], appState: Object.assign({}, initial.appState || {}, { collaborators: new Map() }), files: initial.files || {} } : null;
+      var baseline = null;
+      getContent = function () {
+        var doc = JSON.parse(X.serializeAsJSON(xapi.getSceneElements(), xapi.getAppState(), xapi.getFiles(), "local"));
+        doc.source = "https://github.com/mjmirza/cmux-dataview";
+        return JSON.stringify(doc, null, 2);
+      };
+      X.createRoot($("ex")).render(X.React.createElement(X.Excalidraw, {
+        initialData: data, theme: dark ? "dark" : "light",
+        excalidrawAPI: function (a) { xapi = a; },
+        onChange: function (elements) {
+          var sig = JSON.stringify(elements.map(function (el) { return [el.id, el.version]; }));
+          if (!ready) { baseline = sig; ready = true; return; }
+          setDirty(sig !== baseline);
+        }
+      }));
+    }).catch(function (e) { $("main").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+  }
+
+  function sketchView() {
+    if (!info.hasPreview) { $("main").innerHTML = '<div class="msg">This Sketch file has no saved preview image. Sketch files are a closed format, so editing needs the Sketch app.</div>'; return; }
+    $("main").innerHTML = '<div id="out"><figure style="margin:0;text-align:center"><img id="sketch" alt="Preview of the first page saved inside the Sketch file"><figcaption class="msg" style="margin:12px auto">Read-only preview saved inside the file. Editing needs the Sketch app.</figcaption></figure></div>';
+    fetch("/api/diagram/preview?id=" + encodeURIComponent(id), { headers: { "X-Token": token } })
+      .then(function (r) { if (!r.ok) throw new Error("No preview"); return r.blob(); })
+      .then(function (b) { $("sketch").src = URL.createObjectURL(b); })
+      .catch(function (e) { $("main").innerHTML = '<div class="msg err">' + esc(e.message) + "</div>"; });
+  }
+
+  $("bSave").addEventListener("click", function () { save(false); });
+  $("bReveal").addEventListener("click", function () { api("/api/diagram/reveal", { id: id }); });
+  document.addEventListener("keydown", function (e) { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(false); } });
+  window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  api("/api/settings").then(function (s) {
+    document.documentElement.setAttribute("data-theme", s && s.settings && s.settings.theme === "dark" ? "dark" : "light");
+  }).catch(function () {}).then(function () { return api("/api/diagram?id=" + encodeURIComponent(id)); }).then(function (r) {
+    if (r._status !== 200) { $("main").innerHTML = '<div class="msg err">' + esc(r.error || "Could not open the file") + "</div>"; $("title").textContent = "Error"; return; }
+    info = r; document.title = r.name; $("title").textContent = r.name;
+    $("kind").textContent = { mermaid: "Mermaid", excalidraw: "Excalidraw", sketch: "Sketch, read only" }[r.kind];
+    $("bSave").hidden = !r.editable;
+    ({ mermaid: mermaidView, excalidraw: excalidrawView, sketch: sketchView })[r.kind]();
+  });
+})();
+</script>
+</body>
+</html>

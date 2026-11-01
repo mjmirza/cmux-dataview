@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import dataview_config as C  # noqa: E402
 import dataview_render as R  # noqa: E402
+import dataview_diagram as DG  # noqa: E402
 
 VERSION = R.VERSION
 CACHE_DIR = os.environ.get(
@@ -699,6 +700,7 @@ class State:
         self.port = port
         self.sources = {}
         self.errors = {}
+        self.diagrams = DG.Diagrams()
         self.last_seen = time.time()
         self.lock = threading.Lock()
 
@@ -783,9 +785,9 @@ class Handler(BaseHTTPRequestHandler):
         token = self.headers.get("X-Token") or (query.get("t") or [""])[0]
         return secrets.compare_digest(token, st.token)
 
-    def _body(self):
+    def _body(self, limit=1 << 20):
         n = int(self.headers.get("Content-Length") or 0)
-        if n > 1 << 20:
+        if n > limit:
             raise ValueError("request too large")
         data = json.loads((self.rfile.read(n) if n else b"{}").decode("utf-8") or "{}")
         if not isinstance(data, dict):
@@ -796,11 +798,16 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         query = parse_qs(url.query)
         self.state.last_seen = time.time()
+        if method == "GET" and url.path.startswith("/vendor/"):
+            return self._vendor(url.path[len("/vendor/"):])
         if not self._authorised(query):
             return self._send(403, {"error": "forbidden"})
         try:
             if method == "GET" and url.path.startswith("/v/"):
                 with open(os.path.join(HERE, "viewer.html"), "rb") as fh:
+                    return self._send(200, fh.read(), "text/html; charset=utf-8")
+            if method == "GET" and url.path.startswith("/d/"):
+                with open(os.path.join(HERE, "diagram.html"), "rb") as fh:
                     return self._send(200, fh.read(), "text/html; charset=utf-8")
             name = "api_%s_%s" % (
                 method.lower(),
@@ -812,6 +819,10 @@ class Handler(BaseHTTPRequestHandler):
             return handler(query)
         except Superseded:
             return self._send(409, {"error": "superseded"})
+        except DG.ConflictError as exc:
+            return self._send(409, {"error": str(exc), "conflict": True})
+        except DG.DiagramError as exc:
+            return self._send(400, {"error": str(exc)})
         except KeyError as exc:
             return self._send(410, {"error": str(exc).strip("'\"")})
         except (ValueError, R.RenderError) as exc:
@@ -840,6 +851,39 @@ class Handler(BaseHTTPRequestHandler):
                 raise R.RenderError(err["error"])
             raise KeyError("This view has expired. Double-click the file again.")
         return src
+
+    def _vendor(self, rel):
+        host = (self.headers.get("Host") or "").lower()
+        if host not in ("127.0.0.1:%d" % self.state.port, "localhost:%d" % self.state.port):
+            return self._send(403, {"error": "forbidden"})
+        found = DG.vendor_file(rel)
+        if found is None:
+            return self._send(404, {"error": "not found"})
+        return self._send(200, found[0], found[1])
+
+    def api_post_diagram_open(self, query):
+        did = self.state.diagrams.register(str(self._body().get("path") or ""))
+        url = "http://127.0.0.1:%d/d/%s?t=%s" % (self.state.port, did, self.state.token)
+        return self._send(200, {"id": did, "url": url})
+
+    def api_get_diagram(self, query):
+        return self._send(200, self.state.diagrams.read((query.get("id") or [""])[0]))
+
+    def api_get_diagram_preview(self, query):
+        item = self.state.diagrams.get((query.get("id") or [""])[0])
+        return self._send(200, DG.sketch_preview(item["path"]), "image/png")
+
+    def api_post_diagram_reveal(self, query):
+        item = self.state.diagrams.get(str(self._body().get("id") or ""))
+        subprocess.run(["/usr/bin/open", "-R", "--", item["path"]], check=False)
+        return self._send(200, {"ok": True})
+
+    def api_post_diagram_save(self, query):
+        body = self._body(DG.MAX_TEXT + (1 << 20))
+        mtime = self.state.diagrams.save(
+            str(body.get("id") or ""), body.get("text"), body.get("mtime"), bool(body.get("force"))
+        )
+        return self._send(200, {"ok": True, "mtime": mtime})
 
     def api_get_ping(self, query):
         return self._send(200, {"ok": True, "version": VERSION, "pid": os.getpid()})

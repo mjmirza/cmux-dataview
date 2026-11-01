@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-11-01
+
+### Added
+- Double-clicking a `.mmd` or `.mermaid` file opens the source next to a live diagram, editable and saveable. Before, it opened as plain text.
+- Double-clicking an `.excalidraw` file opens the full Excalidraw editor in the split, with save back to the file. Before, it opened as raw JSON.
+- Double-clicking a `.sketch` file shows the preview image saved inside it, read only. Before, cmux could not show it at all.
+- `cmux-dataview --setup-diagrams` builds the offline editors once into the vendor folder.
+- Saving a diagram checks for changes on disk and asks before overwriting.
+- A `diagrams` setting turns the diagram view on or off.
+
 ## [0.1.1] - 2026-11-01
 
 ### Changed
