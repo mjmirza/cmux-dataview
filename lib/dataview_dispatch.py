@@ -13,6 +13,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import dataview_config as C  # noqa: E402
+import dataview_diagram as DG  # noqa: E402
 
 CMUX = os.environ.get(
     "CMUX_DATAVIEW_CMUX", "/Applications/cmux.app/Contents/Resources/bin/cmux"
@@ -25,7 +26,7 @@ LOG = os.environ.get(
 )
 STATE = os.path.join(CACHE, "server.json")
 NOT_DATA, FAILED = 10, 1
-VIEWER_URL = re.compile(r"^http://127\.0\.0\.1:\d+/v/[0-9a-f]{16}\?t=")
+VIEWER_URL = re.compile(r"^http://127\.0\.0\.1:\d+/[vd]/[0-9a-f]{16}\?t=")
 
 
 def log(msg):
@@ -185,7 +186,7 @@ def viewer_surface(win, ws, base):
             continue
         url = (cmux("browser", "--surface", s["ref"], "url") or "").strip()
         # Any port counts, so a pane left from a helper that has since restarted gets reused too.
-        if url.startswith(base + "/v/") or VIEWER_URL.match(url):
+        if url.startswith((base + "/v/", base + "/d/")) or VIEWER_URL.match(url):
             return s["ref"]
     return None
 
@@ -213,7 +214,8 @@ def dispatch(arg):
     path = resolve(arg)
     cfg = C.load()
     ext = os.path.splitext(path)[1].lower().lstrip(".")
-    if not os.path.isfile(path) or ext not in cfg["extensions"]:
+    diagram = cfg.get("diagrams", True) and DG.kind_for(path) and os.path.isfile(path)
+    if not diagram and (not os.path.isfile(path) or ext not in cfg["extensions"]):
         print(
             cfg["otherFiles"]
         )  # the bash wrapper routes the file with this, saving a second python start
@@ -221,7 +223,7 @@ def dispatch(arg):
     if not os.access(path, os.R_OK):
         log("unreadable: %s" % path)
         return FAILED
-    limit = choose_limit(path, cfg)
+    limit = None if diagram else choose_limit(path, cfg)
     if limit == "cancel":
         log("cancelled: %s" % path)
         return 0
@@ -236,7 +238,10 @@ def dispatch(arg):
             return 0
     try:
         st = ensure_server()
-        url = request(st, "/api/open", {"path": path, "limit": limit})["url"]
+        if diagram:
+            url = request(st, "/api/diagram/open", {"path": path})["url"]
+        else:
+            url = request(st, "/api/open", {"path": path, "limit": limit})["url"]
         ok = show(url, "http://127.0.0.1:%d" % st["port"], cfg)
     except (OSError, RuntimeError, ValueError, KeyError) as exc:
         log("dispatch failed for %s: %s" % (path, exc))

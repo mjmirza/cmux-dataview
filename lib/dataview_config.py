@@ -20,6 +20,7 @@ DEFAULTS = {
     "header": "auto",
     "bigFile": {"thresholdMB": 50, "behaviour": "preview", "previewRows": 50000},
     "idleMinutes": 10,
+    "diagrams": True,
     "focusOnOpen": False,
     "exportDir": "~/Downloads",
     "liveReload": True,
@@ -75,7 +76,7 @@ def _valid(cfg):
         or not 1 <= idle <= 1440
     ):
         cfg["idleMinutes"] = DEFAULTS["idleMinutes"]
-    for k in ("focusOnOpen", "liveReload"):
+    for k in ("focusOnOpen", "liveReload", "diagrams"):
         if not isinstance(cfg.get(k), bool):
             cfg[k] = DEFAULTS[k]
     if not isinstance(cfg.get("exportDir"), str) or not cfg["exportDir"].strip():

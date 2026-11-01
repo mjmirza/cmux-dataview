@@ -154,6 +154,33 @@ Every option is listed in [docs/SETTINGS.md](docs/SETTINGS.md). Keys you add you
   <img src="docs/images/11-dark.png" alt="The same table in the dark theme" width="100%">
 </p>
 
+## Diagrams
+
+The same double-click opens diagram files too.
+
+| File | What you get |
+|---|---|
+| `.mmd`, `.mermaid` | Mermaid source on the left, the live diagram on the right. Edit and save. |
+| `.excalidraw` | The full Excalidraw editor. Draw, edit and save back to the file. |
+| `.sketch` | The preview image saved inside the file. Read only, because Sketch is a closed format. |
+
+Mermaid blocks inside Markdown files already render in the normal cmux preview, so those need nothing extra.
+
+<p align="center">
+  <img src="docs/images/12-mermaid.png" alt="A Mermaid file with the source on the left and the rendered flowchart on the right" width="49%">
+  <img src="docs/images/13-excalidraw.png" alt="An Excalidraw board open for editing inside a cmux split" width="49%">
+</p>
+
+The editors run offline. Install them once.
+
+```bash
+cmux-dataview --setup-diagrams
+```
+
+That downloads Mermaid and Excalidraw from npm, both MIT licensed, and builds them into `~/Library/Application Support/cmux-dataview/vendor`, about 26 MB. Nothing is fetched from the internet after that. Saving checks whether the file changed on disk after you opened it, and asks before overwriting. Press `Cmd+S` or click **Save**.
+
+Images and PDFs already open in the built-in cmux preview, with zoom and rotate, so cmux-dataview leaves them alone.
+
 ## More things it does
 
 - **Live reload.** Save the CSV from another pane and the table refreshes by itself.
@@ -215,6 +242,7 @@ Full design notes are in [docs/DESIGN.md](docs/DESIGN.md).
 | `cmux-dataview --doctor` | Check the setup |
 | `cmux-dataview --config` | Open the settings file |
 | `cmux-dataview --stop` | Stop the helper now |
+| `cmux-dataview --setup-diagrams` | Install the offline Mermaid and Excalidraw editors |
 | `./uninstall.sh` | Remove it and restore your previous cmux settings |
 
 The installer also adds two Command Palette actions, **Data View settings** and **Data View doctor**.
@@ -250,6 +278,9 @@ lib/dataview_render.py     parsing helpers (encodings, delimiters, JSON shapes, 
 lib/dataview_config.py     settings with defaults and validation
 lib/dataview_install.py    safe cmux.json install and uninstall
 lib/viewer.html            the table UI
+lib/diagram.html           the Mermaid, Excalidraw and Sketch view
+lib/dataview_diagram.py    diagram reading, saving and the offline editor files
+lib/setup-diagrams.sh      one-time build of the offline editors
 tests/                     core tests and dispatcher tests
 docs/                      design notes, settings reference, screenshots, demo data
 ```
