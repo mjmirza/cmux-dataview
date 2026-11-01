@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data view</title>
+<style>
+:root {
+  --bg: #fafaf9; --panel: #ffffff; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4;
+  --head: #f5f5f4; --hover: #f0fdf4; --sel: #dcfce7; --accent: #047857; --accent-fg: #ffffff;
+  --warn-bg: #fffbeb; --warn-fg: #92400e; --err-bg: #fef2f2; --err-fg: #991b1b;
+  --num: #065f46; --chip: #f5f5f4; --mark: #fde68a; --ghost: #d6d3d1;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+  --row: 29px;
+}
+:root[data-theme="dark"] {
+  --bg: #1c1917; --panel: #232020; --fg: #f5f5f4; --muted: #a8a29e; --line: #3a3532;
+  --head: #2a2624; --hover: #1f2e27; --sel: #134e3a; --accent: #34d399; --accent-fg: #052e22;
+  --warn-bg: #3a2a10; --warn-fg: #fcd34d; --err-bg: #3b1515; --err-fg: #fca5a5;
+  --num: #6ee7b7; --chip: #2f2a28; --mark: #78591c; --ghost: #44403c;
+}
+:root[data-density="compact"] { --row: 24px; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--sans); overscroll-behavior: none; }
+body { display: flex; flex-direction: column; }
+button, input, select { font: inherit; color: inherit; }
+header { padding: 10px 12px 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.title h1 { font-size: 15px; margin: 0; font-weight: 600; word-break: break-all; }
+.title .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-size: 11.5px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.chip b { color: var(--fg); font-weight: 600; }
+.toolbar { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.search { flex: 1 1 220px; min-width: 160px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.search:focus, .cf:focus, .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 5px 10px; cursor: pointer; white-space: nowrap; transition: background .15s; min-height: 30px; }
+.btn:hover { background: var(--head); }
+.btn:focus-visible { outline: 2px solid var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.on, .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; width: 120px; display: none; }
+.bar.show { display: inline-block; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.banner { margin: 8px 12px 0; padding: 7px 10px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-fg); font-size: 12.5px; border: 1px solid var(--line); display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.banner.err { background: var(--err-bg); color: var(--err-fg); font-size: 14px; padding: 14px; display: block; }
+main { flex: 1; display: flex; min-height: 0; }
+#scroller { flex: 1; overflow: auto; position: relative; }
+#scroller:focus { outline: none; }
+table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+th, td { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0 8px; height: var(--row); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+thead th { position: sticky; z-index: 2; background: var(--head); font-weight: 600; }
+thead tr.h1 th { top: 0; height: 34px; cursor: pointer; user-select: none; }
+thead tr.h2 th { top: 34px; padding: 3px 4px; height: 30px; }
+th.rn, td.rn { position: sticky; left: 0; z-index: 1; background: var(--head); color: var(--muted); text-align: right; font: 11px var(--mono); width: 64px; }
+thead th.rn { z-index: 3; }
+.hname { display: flex; align-items: center; gap: 5px; }
+.hname span.n { overflow: hidden; text-overflow: ellipsis; }
+.badge { font: 10px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; flex: none; }
+.arrow { color: var(--accent); flex: none; }
+.cf { width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; }
+tbody tr:hover td { background: var(--hover); }
+tbody tr:hover td.rn { background: var(--head); }
+td.num { text-align: right; font-family: var(--mono); color: var(--num); font-size: 12px; }
+td.empty::after { content: "empty"; color: var(--muted); opacity: .45; font-size: 11px; }
+td.sel { background: var(--sel) !important; outline: 2px solid var(--accent); outline-offset: -2px; }
+tr.ghost td:not(.rn) { color: transparent; }
+tr.ghost td:not(.rn)::after { content: ""; display: block; height: 8px; margin-top: calc((var(--row) - 8px) / 2 - 1px); border-radius: 4px; background: var(--ghost); opacity: .5; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; }
+aside { width: 320px; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 12px; display: none; }
+aside.open { display: block; }
+aside h2 { font-size: 13px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); gap: 8px; }
+.stat span:first-child { color: var(--muted); }
+.stat span:last-child { font-family: var(--mono); text-align: right; word-break: break-all; }
+.collist label { display: flex; gap: 6px; padding: 3px 0; align-items: center; cursor: pointer; }
+.row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+.field { margin: 8px 0; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.field input[type=text], .field input[type=number], .field select { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.field .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.check { display: flex; gap: 8px; align-items: center; margin: 8px 0; cursor: pointer; }
+.path { font: 11px var(--mono); color: var(--muted); word-break: break-all; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 10; }
+.modal.open { display: flex; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(760px, 92vw); max-height: 80vh; display: flex; flex-direction: column; }
+.card .cbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 8px; }
+.card pre, .card .body { margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 var(--mono); }
+.card .body { font-family: var(--sans); white-space: normal; }
+.help kbd, .body kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: var(--chip); }
+.help td { border: none; height: auto; padding: 3px 8px; white-space: normal; }
+.toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 7px 12px; border-radius: 8px; opacity: 0; transition: opacity .2s; font-size: 12.5px; z-index: 20; display: flex; gap: 10px; align-items: center; pointer-events: none; }
+.toast.show { opacity: 1; pointer-events: auto; }
+.toast button { background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.none { padding: 40px; text-align: center; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <h1 id="fname">Loading</h1>
+    <div class="acts">
+      <button class="btn" id="bReveal" title="Show this file in Finder">Reveal in Finder</button>
+      <button class="btn" id="bDefault" title="Open this file in its default macOS app">Open in default app</button>
+      <button class="btn" id="bSettings" aria-label="Settings" title="Settings">Settings</button>
+      <button class="btn" id="bHelp" aria-label="Keyboard shortcuts and filters" title="Shortcuts and filters">?</button>
+    </div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="toolbar">
+    <input id="q" class="search" type="search" placeholder="Search every row  ( / )" aria-label="Search every row" disabled>
+    <span class="count" id="count" aria-live="polite"></span>
+    <span class="bar" id="bar" aria-hidden="true"><i id="barFill"></i></span>
+    <button class="btn" id="bCols">Columns</button>
+    <button class="btn" id="bCopy" title="Copy up to 10,000 rows of the current view as TSV, to paste into a spreadsheet">Copy rows</button>
+    <button class="btn" id="bExport" title="Save the current view as CSV, exactly as it is">Export CSV</button>
+    <button class="btn" id="bExportXl" title="Save a CSV that is safe to open in Excel or Sheets. Cells starting with = + - @ get an apostrophe so they cannot run as formulas">Export for Excel</button>
+    <button class="btn" id="bReset" title="Clear search, filters and sort">Reset</button>
+  </div>
+</header>
+<div id="banners"></div>
+<main>
+  <div id="scroller" tabindex="0" aria-label="Table"><table id="t" role="grid" aria-label="Data table"><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+  <aside id="side" aria-label="Side panel"></aside>
+</main>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="card"><div class="cbar"><b id="mTitle"></b><span><button class="btn" id="mCopy">Copy</button> <button class="btn" id="mClose">Close</button></span></div><pre id="mBody"></pre></div></div>
+<div class="toast" id="toast" role="status"><span id="toastText"></span><button id="toastAct" hidden></button></div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+  var TOKEN = params.get("t") || "";
+  var ID = (location.pathname.split("/v/")[1] || "").replace(/[^a-f0-9]/g, "");
+  var HEAD_H = 64, OVERSCAN = 30, BLOCK = 250, MAX_H = 8000000;
+
+  // ---------------------------------------------------------------- helpers
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function fmtInt(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function fmtNum(n) { if (n === null || n === undefined) return ""; if (Math.abs(n) >= 1e15 || (Math.abs(n) < 1e-4 && n !== 0)) return n.toExponential(3); return n.toLocaleString("en-US", { maximumFractionDigits: 4 }); }
+  function fmtBytes(b) { if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB"; return (b / 1073741824).toFixed(2) + " GB"; }
+  function rowH() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row")) || 29; }
+  function toast(msg, actLabel, act) {
+    $("toastText").textContent = msg;
+    var b = $("toastAct");
+    if (actLabel) { b.hidden = false; b.textContent = actLabel; b.onclick = act; } else { b.hidden = true; }
+    $("toast").classList.add("show");
+    clearTimeout(toast.h); toast.h = setTimeout(function () { $("toast").classList.remove("show"); }, actLabel ? 6000 : 1800);
+  }
+  function api(path, body, signal) {
+    var opts = { headers: { "X-Token": TOKEN }, signal: signal };
+    if (body !== undefined) { opts.method = "POST"; opts.body = JSON.stringify(body); opts.headers["Content-Type"] = "application/json"; }
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || ("HTTP " + r.status)); e.status = r.status; throw e; } return j; });
+    });
+  }
+  function copyFallback(text) { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; } ta.remove(); return ok; }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return copyFallback(text); });
+    return Promise.resolve(copyFallback(text));
+  }
+  var local = {
+    get: function (k) { try { return JSON.parse(localStorage.getItem("cmux-dataview:" + k) || "null"); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem("cmux-dataview:" + k, JSON.stringify(v)); } catch (e) { return false; } return true; }
+  };
+
+  // ---------------------------------------------------------------- state
+  var meta = null, settings = null, cols = [], hidden = new Set();
+  var query = "", colFilters = {}, sort = null;
+  var qid = "", count = 0, generation = 0, pending = null;
+  var cache = new Map(), inflight = new Set();
+  var sel = null, lastMtime = null, widths = [];
+
+  function applyLook() {
+    document.documentElement.setAttribute("data-theme", settings && settings.theme === "dark" ? "dark" : "light");
+    document.documentElement.setAttribute("data-density", settings && settings.density === "compact" ? "compact" : "comfortable");
+  }
+
+  // ---------------------------------------------------------------- header + chips
+  function renderChips() {
+    var n = meta.notes || {};
+    var items = [["Rows", fmtInt(meta.total) + (meta.status === "indexing" ? "+" : "")], ["Columns", cols.length], ["Format", n.format], ["Delimiter", n.delimiter], ["Encoding", n.encoding], ["Size", fmtBytes(meta.size)]];
+    $("chips").innerHTML = items.filter(function (c) { return c[1] !== undefined && c[1] !== null && c[1] !== ""; }).map(function (c) { return '<span class="chip">' + esc(c[0]) + " <b>" + esc(c[1]) + "</b></span>"; }).join("") + '<span class="chip" title="' + esc(meta.file) + '">' + esc(meta.file) + "</span>";
+  }
+  function renderBanners() {
+    var html = "";
+    if (meta.truncated) html += '<div class="banner"><span>This is a partial view. Showing the first ' + fmtInt(meta.limit) + " rows of a large file. Search and filters cover these rows only.</span><button class=\"btn\" id=\"bLoadAll\">Load the whole file</button></div>";
+    (meta.warnings || []).forEach(function (w) { if (!/^Showing the first/.test(w)) html += '<div class="banner"><span>' + esc(w) + "</span></div>"; });
+    $("banners").innerHTML = html;
+    var b = $("bLoadAll");
+    if (b) b.onclick = function () { b.disabled = true; b.textContent = "Loading"; api("/api/open", { path: meta.file, limit: null }).then(function () { location.reload(); }, function (e) { toast(e.message); b.disabled = false; }); };
+  }
+  function showError(msg) {
+    $("banners").innerHTML = '<div class="banner err"><b>This file could not be shown as a table.</b><br>' + esc(msg) + '<br><br><span class="path">' + esc((meta && meta.file) || "") + "</span></div>";
+    $("q").disabled = true;
+    $("tb").innerHTML = ""; $("th").innerHTML = "";
+  }
+
+  function visibleCols() { var v = []; for (var i = 0; i < cols.length; i++) if (!hidden.has(i)) v.push(i); return v; }
+  function computeWidths() {
+    widths = cols.map(function (c) { return Math.max(90, Math.min(420, (c.name.length + 6) * 7.4 + 18)); });
+  }
+  function growWidths(rows) {
+    var changed = false;
+    rows.forEach(function (row) { for (var i = 0; i < cols.length; i++) { var w = Math.max(90, Math.min(420, (row[i + 1] || "").length * 7.6 + 28)); if (w > widths[i]) { widths[i] = w; changed = true; } } });
+    return changed;
+  }
+  function buildHead() {
+    var vc = visibleCols();
+    $("cg").innerHTML = '<col style="width:64px">' + vc.map(function (i) { return '<col style="width:' + widths[i] + 'px">'; }).join("");
+    var total = 64; vc.forEach(function (i) { total += widths[i]; }); $("t").style.width = total + "px";
+    var h1 = '<tr class="h1"><th class="rn" scope="col">#</th>', h2 = '<tr class="h2"><th class="rn"></th>';
+    vc.forEach(function (i) {
+      var c = cols[i], arrow = "", aria = "none";
+      if (sort && sort.col === i) { arrow = sort.dir > 0 ? "&#9650;" : "&#9660;"; aria = sort.dir > 0 ? "ascending" : "descending"; }
+      h1 += '<th scope="col" aria-sort="' + aria + '" data-c="' + i + '" title="' + esc(c.name) + " (" + c.type + '). Click to sort, right-click for stats"><div class="hname"><span class="n">' + esc(c.name) + '</span><span class="badge">' + esc(c.type.slice(0, 3)) + '</span><span class="arrow">' + arrow + "</span></div></th>";
+      var ph = c.numeric ? "> 10, 5..9, empty" : "contains, =exact, !not";
+      h2 += '<th><input class="cf" data-f="' + i + '" value="' + esc(colFilters[i] || "") + '" placeholder="' + ph + '" aria-label="Filter ' + esc(c.name) + '"></th>';
+    });
+    $("th").innerHTML = h1 + "</tr>" + h2 + "</tr>";
+  }
+
+  // ---------------------------------------------------------------- query
+  function hasQuery() { return !!(query.trim() || sort || Object.keys(colFilters).some(function (k) { return (colFilters[k] || "").trim(); })); }
+  function updateCount(searching) {
+    var total = meta ? meta.total : 0;
+    var txt;
+    if (searching) txt = "Searching " + fmtInt(total) + " rows";
+    else if (hasQuery() && (query.trim() || Object.keys(colFilters).some(function (k) { return (colFilters[k] || "").trim(); }))) txt = fmtInt(count) + " of " + fmtInt(total) + " rows";
+    else txt = fmtInt(count) + " rows" + (meta && meta.status === "indexing" ? ", still indexing" : "");
+    $("count").textContent = txt;
+  }
+  function runQuery() {
+    var gen = ++generation;
+    cache.clear(); inflight.clear();
+    if (pending) pending.abort();
+    if (!hasQuery()) { qid = ""; count = meta.total; updateCount(false); setProgress(null); draw(true); return; }
+    var ctl = new AbortController(); pending = ctl;
+    updateCount(true); setProgress(0);
+    var body = { id: ID, q: query, filters: colFilters, sort: sort, cols: visibleCols() };
+    api("/api/query", body, ctl.signal).then(function (r) {
+      if (gen !== generation) return;
+      pending = null; qid = r.qid; count = r.count; setProgress(null); updateCount(false); scrollTo(0); draw(true);
+    }, function (e) {
+      if (gen !== generation || e.name === "AbortError" || e.status === 409) return;
+      pending = null; setProgress(null); toast("Search failed. " + e.message);
+    });
+  }
+  var qTimer;
+  function scheduleQuery() { clearTimeout(qTimer); qTimer = setTimeout(runQuery, 260); }
+  function setProgress(p) {
+    if (p === null) { $("bar").classList.remove("show"); return; }
+    $("bar").classList.add("show"); $("barFill").style.width = Math.round(p * 100) + "%";
+  }
+
+  // ---------------------------------------------------------------- rows on demand
+  function fetchBlock(b) {
+    var key = qid + ":" + b;
+    if (inflight.has(key)) return;
+    inflight.add(key);
+    var gen = generation;
+    api("/api/rows?id=" + ID + "&qid=" + encodeURIComponent(qid) + "&start=" + b * BLOCK + "&end=" + (b + 1) * BLOCK).then(function (r) {
+      inflight.delete(key);
+      if (gen !== generation) return;
+      r.rows.forEach(function (row, k) { cache.set(b * BLOCK + k, row); });
+      if (cache.size > 60000) { var drop = cache.size - 40000, it = cache.keys(); while (drop-- > 0) cache.delete(it.next().value); }
+      if (growWidths(r.rows)) buildHead();
+      draw(true);
+    }, function (e) {
+      inflight.delete(key);
+      if (e.status === 410) { qid = ""; runQuery(); }
+    });
+  }
+
+  // ---------------------------------------------------------------- virtual scroll
+  var scroller = $("scroller"), last = "";
+  function geometry() {
+    var h = rowH(), full = count * h, scaled = full > MAX_H, total = scaled ? MAX_H : full;
+    var vis = Math.max(1, Math.ceil(scroller.clientHeight / h));
+    var y = Math.max(0, scroller.scrollTop - HEAD_H);
+    var top = scaled ? Math.floor(y / Math.max(1, total - scroller.clientHeight) * Math.max(0, count - vis)) : Math.floor(y / h);
+    top = Math.max(0, Math.min(top, Math.max(0, count - 1)));
+    return { h: h, scaled: scaled, total: total, vis: vis, y: y, top: top };
+  }
+  function scrollTo(pos) {
+    var g = geometry();
+    if (g.scaled) scroller.scrollTop = HEAD_H + (pos / Math.max(1, count - g.vis)) * Math.max(1, g.total - scroller.clientHeight);
+    else scroller.scrollTop = pos * g.h;
+  }
+  function highlight(text) {
+    var safe = esc(text); if (!query) return safe;
+    var q = esc(query), lo = safe.toLowerCase(), ql = q.toLowerCase(), out = "", p = 0, idx;
+    while ((idx = lo.indexOf(ql, p)) !== -1) { out += safe.slice(p, idx) + "<mark>" + safe.slice(idx, idx + q.length) + "</mark>"; p = idx + q.length; }
+    return out + safe.slice(p);
+  }
+  function draw(force) {
+    if (!cols.length) return;
+    var g = geometry();
+    var start = Math.max(0, g.top - (g.scaled ? 0 : OVERSCAN));
+    var end = Math.min(count, g.top + g.vis + OVERSCAN);
+    var key = start + ":" + end + ":" + count + ":" + qid;
+    if (!force && key === last) return; last = key;
+    var vc = visibleCols(), html = "", missing = {};
+    var topPad = g.scaled ? Math.max(0, g.y - (g.top - start) * g.h) : start * g.h;
+    if (topPad > 0) html += '<tr aria-hidden="true" style="height:' + topPad + 'px"><td colspan="' + (vc.length + 1) + '" style="border:0;padding:0"></td></tr>';
+    for (var pos = start; pos < end; pos++) {
+      var row = cache.get(pos);
+      if (!row) {
+        missing[Math.floor(pos / BLOCK)] = true;
+        html += '<tr class="ghost"><td class="rn"></td>' + vc.map(function () { return "<td></td>"; }).join("") + "</tr>";
+        continue;
+      }
+      var rid = row[0];
+      html += '<tr data-p="' + pos + '"><td class="rn">' + fmtInt(rid + 1) + "</td>";
+      for (var c = 0; c < vc.length; c++) {
+        var i = vc[c], v = row[i + 1] || "", cls = cols[i].numeric ? "num" : "";
+        if (v === "") cls += " empty";
+        if (sel && sel.p === pos && sel.c === i) cls += " sel";
+        html += '<td data-c="' + i + '" class="' + cls + '"' + (v.length > 30 ? ' title="' + esc(v.slice(0, 600)) + '"' : "") + ">" + highlight(v) + "</td>";
+      }
+      html += "</tr>";
+    }
+    var used = topPad + (end - start) * g.h, rest = g.total - used;
+    if (rest > 0) html += '<tr aria-hidden="true" style="height:' + rest + 'px"><td colspan="' + (vc.length + 1) + '" style="border:0;padding:0"></td></tr>';
+    if (!count) html = '<tr><td colspan="' + (vc.length + 1) + '"><div class="none">' + (hasQuery() ? "No rows match the current search and filters." : (meta.status === "indexing" ? "Reading the file" : "This file has no data rows.")) + "</div></td></tr>";
+    $("tb").innerHTML = html;
+    Object.keys(missing).forEach(function (b) { fetchBlock(+b); });
+  }
+  var raf = 0;
+  scroller.addEventListener("scroll", function () { if (!raf) raf = requestAnimationFrame(function () { raf = 0; draw(false); }); });
+  window.addEventListener("resize", function () { draw(true); });
+
+  // ---------------------------------------------------------------- header events
+  $("th").addEventListener("click", function (e) {
+    var th = e.target.closest("th[data-c]"); if (!th) return;
+    var i = +th.getAttribute("data-c");
+    if (e.altKey) { showStats(i); return; }
+    if (!sort || sort.col !== i) sort = { col: i, dir: 1 }; else if (sort.dir === 1) sort = { col: i, dir: -1 }; else sort = null;
+    buildHead(); runQuery();
+  });
+  $("th").addEventListener("contextmenu", function (e) { var th = e.target.closest("th[data-c]"); if (!th) return; e.preventDefault(); showStats(+th.getAttribute("data-c")); });
+  $("th").addEventListener("input", function (e) { var i = e.target.getAttribute("data-f"); if (i === null) return; colFilters[i] = e.target.value; scheduleQuery(); });
+  $("q").addEventListener("input", function () { query = this.value; scheduleQuery(); });
+
+  // ---------------------------------------------------------------- cells, modal
+  $("tb").addEventListener("click", function (e) { var td = e.target.closest("td[data-c]"); if (!td) return; sel = { p: +td.parentNode.getAttribute("data-p"), c: +td.getAttribute("data-c") }; draw(true); });
+  $("tb").addEventListener("dblclick", function (e) { var td = e.target.closest("td[data-c]"); if (!td) return; openCell(+td.parentNode.getAttribute("data-p"), +td.getAttribute("data-c")); });
+  function prettyValue(v) { var s = v.trim(); if ((s[0] === "{" || s[0] === "[") && s.length < 2000000) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return v; } } return v; }
+  function openModal(title, body, isHtml) {
+    $("mTitle").textContent = title;
+    var b = $("mBody");
+    if (isHtml) { b.className = "body"; b.innerHTML = body; } else { b.className = ""; b.textContent = body; }
+    $("mCopy").hidden = !!isHtml;
+    $("modal").classList.add("open"); $("mClose").focus();
+  }
+  function openCell(p, c) { var row = cache.get(p); if (!row) return; openModal(cols[c].name + "  (row " + fmtInt(row[0] + 1) + ")", prettyValue(row[c + 1] || "")); }
+  function openRow(p) { var row = cache.get(p); if (!row) return; var o = {}; cols.forEach(function (c, i) { o[c.name] = row[i + 1]; }); openModal("Row " + fmtInt(row[0] + 1), JSON.stringify(o, null, 2)); }
+  function closeModal() { $("modal").classList.remove("open"); scroller.focus(); }
+  $("mClose").onclick = closeModal;
+  $("modal").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
+  $("mCopy").onclick = function () { copyText($("mBody").textContent).then(function (ok) { toast(ok ? "Copied" : "Copy failed"); }); };
+
+  // ---------------------------------------------------------------- export, copy, actions
+  function exportCsv(mode) {
+    var btn = mode === "excel" ? $("bExportXl") : $("bExport");
+    btn.disabled = true;
+    api("/api/export", { id: ID, qid: qid, mode: mode, cols: visibleCols() }).then(function (r) {
+      btn.disabled = false;
+      toast("Saved " + fmtInt(r.rows) + " rows to " + r.path.split("/").slice(-2).join("/"), "Show in Finder", function () { api("/api/action", { id: ID, action: "revealExport", path: r.path }); });
+    }, function (e) { btn.disabled = false; toast("Export failed. " + e.message); });
+  }
+  $("bExport").onclick = function () { exportCsv("raw"); };
+  $("bExportXl").onclick = function () { exportCsv("excel"); };
+  $("bCopy").onclick = function () {
+    var n = Math.min(count, 10000), vc = visibleCols(), blocks = [];
+    for (var b = 0; b * BLOCK < n; b++) blocks.push(api("/api/rows?id=" + ID + "&qid=" + encodeURIComponent(qid) + "&start=" + b * BLOCK + "&end=" + Math.min(n, (b + 1) * BLOCK)));
+    Promise.all(blocks).then(function (parts) {
+      var clean = function (v) { return (v || "").replace(/[\t\n\r]+/g, " "); };
+      var lines = [vc.map(function (i) { return clean(cols[i].name); }).join("\t")];
+      parts.forEach(function (p) { p.rows.forEach(function (row) { lines.push(vc.map(function (i) { return clean(row[i + 1]); }).join("\t")); }); });
+      return copyText(lines.join("\n")).then(function (ok) { toast(ok ? "Copied " + fmtInt(lines.length - 1) + " rows" + (count > n ? " (the first 10,000)" : "") : "Copy failed"); });
+    }, function (e) { toast("Copy failed. " + e.message); });
+  };
+  $("bReset").onclick = function () { query = ""; $("q").value = ""; colFilters = {}; sort = null; hidden.clear(); saveHidden(); buildHead(); runQuery(); toast("Reset"); };
+  $("bReveal").onclick = function () { api("/api/action", { id: ID, action: "reveal" }).catch(function (e) { toast(e.message); }); };
+  $("bDefault").onclick = function () { api("/api/action", { id: ID, action: "openDefault" }).catch(function (e) { toast(e.message); }); };
+  function saveHidden() { var all = local.get("hidden") || {}; all[meta.file] = Array.from(hidden); local.set("hidden", all); }
+
+  // ---------------------------------------------------------------- side panels
+  var side = $("side");
+  function closeSide() { side.classList.remove("open"); ["bCols", "bSettings"].forEach(function (b) { $(b).classList.remove("on"); }); }
+  function openSide(btn) { ["bCols", "bSettings"].forEach(function (b) { $(b).classList.toggle("on", b === btn); }); side.classList.add("open"); }
+  function showCols() {
+    side.innerHTML = '<h2>Columns <button class="btn" id="sClose">Close</button></h2><div class="row"><button class="btn" id="sAll">Show all</button><button class="btn" id="sNone">Hide all</button></div><input class="search" id="sFind" placeholder="Find column" style="width:100%;margin-bottom:6px"><div class="collist" id="sList"></div>';
+    function list(f) {
+      $("sList").innerHTML = cols.map(function (c, i) { if (f && c.name.toLowerCase().indexOf(f) === -1) return ""; return '<label><input type="checkbox" data-h="' + i + '"' + (hidden.has(i) ? "" : " checked") + "> " + esc(c.name) + ' <span class="badge">' + esc(c.type.slice(0, 3)) + "</span></label>"; }).join("");
+    }
+    list("");
+    $("sFind").oninput = function () { list(this.value.toLowerCase()); };
+    $("sList").onchange = function (e) { var i = +e.target.getAttribute("data-h"); if (e.target.checked) hidden.delete(i); else hidden.add(i); saveHidden(); buildHead(); if (query.trim()) runQuery(); else draw(true); };
+    $("sAll").onclick = function () { hidden.clear(); saveHidden(); buildHead(); draw(true); showCols(); };
+    $("sNone").onclick = function () { for (var i = 0; i < cols.length; i++) hidden.add(i); saveHidden(); buildHead(); draw(true); showCols(); };
+    $("sClose").onclick = closeSide;
+    openSide("bCols");
+  }
+  function showStats(i) {
+    var c = cols[i];
+    side.innerHTML = "<h2>" + esc(c.name) + ' <button class="btn" id="sClose">Close</button></h2><div class="none" style="padding:12px">Reading every row</div>';
+    $("sClose").onclick = closeSide;
+    openSide(null);
+    api("/api/stats?id=" + ID + "&col=" + i).then(function (s) {
+      var items = [["Type", s.type], ["Rows", fmtInt(s.rows)], ["Empty", fmtInt(s.empty)], ["Unique", fmtInt(s.unique) + (s.uniqueCapped ? "+" : "")]];
+      if ("min" in s) items.push(["Min", fmtNum(s.min)], ["Max", fmtNum(s.max)], ["Mean", fmtNum(s.mean)], ["Sum", fmtNum(s.sum)]);
+      if ("first" in s) items.push(["Earliest", s.first], ["Latest", s.last]);
+      if ("avgLength" in s) items.push(["Avg length", s.avgLength.toFixed(1)]);
+      var top = (s.top || []).map(function (t) { return '<div class="stat"><span>' + esc(t[0] || "(empty)") + "</span><span>" + fmtInt(t[1]) + "</span></div>"; }).join("");
+      side.innerHTML = "<h2>" + esc(c.name) + ' <button class="btn" id="sClose">Close</button></h2>' + items.map(function (it) { return '<div class="stat"><span>' + esc(it[0]) + "</span><span>" + esc(it[1]) + "</span></div>"; }).join("") + (top ? "<h3>Most frequent</h3>" + top : "") + '<div class="row"><button class="btn" id="sHide">Hide column</button><button class="btn" id="sSort">Sort by this</button></div><p class="path">Computed across every row of the file.</p>';
+      $("sClose").onclick = closeSide;
+      $("sHide").onclick = function () { hidden.add(i); saveHidden(); buildHead(); draw(true); closeSide(); };
+      $("sSort").onclick = function () { sort = { col: i, dir: 1 }; buildHead(); runQuery(); };
+    }, function (e) { toast("Stats failed. " + e.message); });
+  }
+
+  // ---------------------------------------------------------------- settings
+  var LABELS = {
+    theme: ["Theme", "Light is the default."],
+    density: ["Row height", "Compact fits more rows on screen."],
+    numberLocale: ["Number format", "Auto detects German decimals like 1.234,56. Force it if detection guesses wrong."],
+    delimiter: ["Delimiter", "Auto sniffs comma, semicolon, tab and pipe."],
+    header: ["First row is a header", "Auto treats a first row of only numbers or dates as data."],
+    otherFiles: ["Other files (not data)", "What a double-click does for files this plugin does not show."],
+    "bigFile.behaviour": ["Large files", "Preview opens at once with the first rows. Ask shows a dialog. Full always loads everything."]
+  };
+  var CHOICE_TEXT = {
+    preview: "Preview first rows", ask: "Ask each time", full: "Load the whole file", defaultApp: "Open in default app", priorEditor: "Open in my previous editor",
+    light: "Light", dark: "Dark", compact: "Compact", comfortable: "Comfortable", auto: "Auto", en: "English 1,234.56", de: "German 1.234,56",
+    comma: "Comma", semicolon: "Semicolon", tab: "Tab", pipe: "Pipe", yes: "Yes", no: "No"
+  };
+  function choiceText(key, v) { if (key === "otherFiles" && v === "preview") return "cmux preview (default)"; return CHOICE_TEXT[v] || v; }
+  function selectField(key, value, choices) {
+    var lab = LABELS[key] || [key, ""];
+    return '<div class="field"><label for="f_' + key + '">' + esc(lab[0]) + '</label><select id="f_' + key + '" data-k="' + key + '">' + choices.map(function (c) { return '<option value="' + esc(c) + '"' + (c === value ? " selected" : "") + ">" + esc(choiceText(key, c)) + "</option>"; }).join("") + '</select><div class="hint">' + esc(lab[1]) + "</div></div>";
+  }
+  function showSettings() {
+    side.innerHTML = '<h2>Settings <button class="btn" id="sClose">Close</button></h2><div class="none" style="padding:12px">Loading</div>';
+    $("sClose").onclick = closeSide;
+    openSide("bSettings");
+    api("/api/settings").then(function (r) {
+      var s = r.settings, ch = r.choices;
+      var html = '<h2>Settings <button class="btn" id="sClose">Close</button></h2>' +
+        "<h3>Look</h3>" + selectField("theme", s.theme, ch.theme) + selectField("density", s.density, ch.density) +
+        "<h3>Reading files</h3>" + selectField("delimiter", s.delimiter, ch.delimiter) + selectField("header", s.header, ch.header) + selectField("numberLocale", s.numberLocale, ch.numberLocale) +
+        "<h3>Large files</h3>" + selectField("bigFile.behaviour", s.bigFile.behaviour, ch["bigFile.behaviour"]) +
+        '<div class="field"><label for="f_thr">Large file starts at (MB)</label><input type="number" id="f_thr" min="1" value="' + esc(s.bigFile.thresholdMB) + '"></div>' +
+        '<div class="field"><label for="f_rows">Rows in a preview</label><input type="number" id="f_rows" min="100" step="1000" value="' + esc(s.bigFile.previewRows) + '"></div>' +
+        "<h3>Opening</h3>" + selectField("otherFiles", s.otherFiles, ch.otherFiles) +
+        '<div class="field"><label for="f_ext">File types shown as tables</label><input type="text" id="f_ext" value="' + esc(s.extensions.join(", ")) + '"><div class="hint">Comma separated. Add txt or log if you keep data in those.</div></div>' +
+        '<label class="check"><input type="checkbox" id="f_live"' + (s.liveReload ? " checked" : "") + "> Refresh when the file changes on disk</label>" +
+        '<label class="check"><input type="checkbox" id="f_focus"' + (s.focusOnOpen ? " checked" : "") + "> Move focus to the table when it opens</label>" +
+        '<div class="field"><label for="f_dir">Export folder</label><input type="text" id="f_dir" value="' + esc(s.exportDir) + '"></div>' +
+        '<div class="field"><label for="f_idle">Stop the helper after idle minutes</label><input type="number" id="f_idle" min="1" max="1440" value="' + esc(s.idleMinutes) + '"></div>' +
+        '<div class="row"><button class="btn primary" id="sSave">Save</button><button class="btn" id="sDefaults">Restore defaults</button></div>' +
+        '<p class="path">Saved to ' + esc(r.path) + ". You can edit that file by hand too. Keys this panel does not know about are kept.</p>";
+      side.innerHTML = html;
+      $("sClose").onclick = closeSide;
+      function collect() {
+        var out = { bigFile: {} };
+        side.querySelectorAll("select[data-k]").forEach(function (el) { var k = el.getAttribute("data-k"); if (k === "bigFile.behaviour") out.bigFile.behaviour = el.value; else out[k] = el.value; });
+        out.bigFile.thresholdMB = Number($("f_thr").value) || s.bigFile.thresholdMB;
+        out.bigFile.previewRows = Number($("f_rows").value) || s.bigFile.previewRows;
+        out.extensions = $("f_ext").value.split(",").map(function (x) { return x.trim().replace(/^\./, "").toLowerCase(); }).filter(Boolean);
+        out.liveReload = $("f_live").checked; out.focusOnOpen = $("f_focus").checked;
+        out.exportDir = $("f_dir").value.trim() || s.exportDir;
+        out.idleMinutes = Number($("f_idle").value) || s.idleMinutes;
+        return out;
+      }
+      function save(changes) {
+        var reread = ["delimiter", "header", "numberLocale"].some(function (k) { return changes[k] !== undefined && changes[k] !== s[k]; });
+        return api("/api/settings", { settings: changes }).then(function (res) {
+          settings = res.settings; applyLook();
+          if (reread) { toast("Saved. Reading the file again"); api("/api/open", { path: meta.file, limit: meta.limit }).then(function () { location.reload(); }); }
+          else { toast("Settings saved"); showSettings(); }
+        }, function (e) { toast("Could not save. " + e.message); });
+      }
+      $("sSave").onclick = function () { save(collect()); };
+      $("sDefaults").onclick = function () { save(JSON.parse(JSON.stringify(r.defaults))); };
+    }, function (e) { toast("Settings failed to load. " + e.message); });
+  }
+  $("bCols").onclick = function () { if (side.classList.contains("open") && this.classList.contains("on")) closeSide(); else showCols(); };
+  $("bSettings").onclick = function () { if (side.classList.contains("open") && this.classList.contains("on")) closeSide(); else showSettings(); };
+
+  // ---------------------------------------------------------------- help + keyboard
+  $("bHelp").onclick = function () {
+    openModal("Shortcuts and filters", '<table class="help">' + [["/", "Search every row"], ["Esc", "Close a panel, or clear the search"], ["Arrow keys", "Move the selected cell"], ["Enter", "Open the selected cell in full"], ["Shift+Enter", "Open the whole row as JSON"], ["Cmd+C", "Copy the selected cell"], ["Click a header", "Sort ascending, descending, off"], ["Right-click a header", "Column stats across the whole file"]].map(function (k) { return "<tr><td><kbd>" + esc(k[0]) + "</kbd></td><td>" + esc(k[1]) + "</td></tr>"; }).join("") +
+      "</table><p>Column filters. Text columns take plain text (contains), <kbd>=exact</kbd> or <kbd>!not</kbd>. Number columns also take <kbd>&gt; 10</kbd>, <kbd>&lt;= 5</kbd>, <kbd>!= 0</kbd> and ranges like <kbd>5..9</kbd>. Any column takes <kbd>empty</kbd> or <kbd>!empty</kbd>.</p><p>Search, filters, sort and stats run across the whole file, not only the rows on screen. Rows load as you scroll.</p><p>The view refreshes by itself when the file changes on disk. Turn that off in Settings.</p>", true);
+  };
+  document.addEventListener("keydown", function (e) {
+    var tag = (e.target.tagName || "").toLowerCase(), typing = tag === "input" || tag === "textarea" || tag === "select";
+    if (e.key === "Escape") {
+      if ($("modal").classList.contains("open")) { closeModal(); return; }
+      if (side.classList.contains("open")) { closeSide(); return; }
+      if (typing && e.target.type !== "checkbox") { e.target.value = ""; e.target.dispatchEvent(new Event("input", { bubbles: true })); e.target.blur(); }
+      return;
+    }
+    if (typing) return;
+    if (e.key === "/") { e.preventDefault(); $("q").focus(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === "c" && sel && !String(window.getSelection())) { var row = cache.get(sel.p); if (row) { e.preventDefault(); copyText(row[sel.c + 1] || "").then(function (ok) { toast(ok ? "Cell copied" : "Copy failed"); }); } return; }
+    if (e.key === "Enter" && sel) { e.preventDefault(); if (e.shiftKey) openRow(sel.p); else openCell(sel.p, sel.c); return; }
+    if (sel && /^Arrow/.test(e.key)) {
+      e.preventDefault();
+      var vc = visibleCols(), ci = vc.indexOf(sel.c), p = sel.p;
+      if (ci < 0) return;
+      if (e.key === "ArrowRight" && ci < vc.length - 1) ci++;
+      if (e.key === "ArrowLeft" && ci > 0) ci--;
+      if (e.key === "ArrowDown" && p < count - 1) p++;
+      if (e.key === "ArrowUp" && p > 0) p--;
+      sel = { p: p, c: vc[ci] };
+      var g = geometry();
+      if (p < g.top || p >= g.top + g.vis - 2) scrollTo(Math.max(0, p - Math.floor(g.vis / 2)));
+      draw(true);
+    }
+  });
+
+  // ---------------------------------------------------------------- boot + live updates
+  var pollTimer = null;
+  function poll() {
+    api("/api/meta?id=" + ID).then(function (m) {
+      var wasIndexing = meta && meta.status === "indexing";
+      var firstColumns = meta && !meta.columns.length && m.columns.length;
+      var changed = lastMtime !== null && m.mtime !== lastMtime && settings && settings.liveReload;
+      meta = m;
+      if (m.status === "error" || m.error) { showError(m.error || "Unknown error"); return schedule(4000); }
+      if (firstColumns) { initColumns(); }
+      if (pending) setProgress(m.queryProgress || 0);
+      else if (m.status === "indexing") setProgress(m.progress);
+      else setProgress(null);
+      renderChips();
+      if (changed) { lastMtime = m.mtime; renderBanners(); toast("The file changed on disk. View refreshed"); initColumns(); return schedule(1500); }
+      lastMtime = m.mtime;
+      if (!hasQuery() && count !== m.total) { count = m.total; updateCount(false); draw(true); }
+      else if (wasIndexing && m.status !== "indexing") { renderBanners(); if (hasQuery()) runQuery(); else updateCount(false); }
+      schedule(m.status === "indexing" || pending ? 500 : 2000);
+    }, function (e) {
+      if (e.status === 410 || e.status === 403) { showError("This view has expired, because the helper restarted. Double-click the file again in the file tree."); return; }
+      if (e.status === 400) { showError(e.message); return; }
+      schedule(4000);
+    });
+  }
+  function schedule(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+  function initColumns() {
+    cols = meta.columns; cache.clear();
+    var saved = (local.get("hidden") || {})[meta.file] || [];
+    hidden = new Set(saved.filter(function (i) { return i < cols.length; }));
+    computeWidths(); buildHead(); renderBanners();
+    $("q").disabled = !cols.length;
+    if (!cols.length && meta.status !== "indexing") { $("tb").innerHTML = '<tr><td><div class="none">This file is empty. There are no columns to show.</div></td></tr>'; }
+    runQuery();
+  }
+  if (!ID || !TOKEN) { showError("This link is missing its file id or token. Double-click the file again."); return; }
+  Promise.all([api("/api/meta?id=" + ID), api("/api/settings").catch(function () { return { settings: {} }; })]).then(function (res) {
+    meta = res[0]; settings = res[1].settings || {}; applyLook();
+    $("fname").textContent = meta.name; document.title = meta.name;
+    if (meta.status === "error" || meta.error) { showError(meta.error || "Unknown error"); return; }
+    lastMtime = meta.mtime; count = meta.total;
+    renderChips();
+    if (meta.columns.length) initColumns(); else updateCount(false);
+    if (settings.focusOnOpen !== false) scroller.focus();
+    schedule(meta.status === "indexing" ? 300 : 2000);
+  }, function (e) {
+    if (e.status === 403) showError("This view has expired, because the helper restarted. Double-click the file again in the file tree.");
+    else showError(e.message);
+  });
+})();
+</script>
+</body>
+</html>

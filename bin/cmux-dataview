@@ -1,0 +1,140 @@
+#!/bin/bash
+# cmux-dataview. Opens CSV, TSV and JSON files as a live table in a cmux split.
+# Installed as cmux's app.preferredEditor, so it receives every file and hands non-data files back.
+set -uo pipefail
+
+VERSION="0.1.0"
+CMUX="${CMUX_DATAVIEW_CMUX:-/Applications/cmux.app/Contents/Resources/bin/cmux}"
+PY="${CMUX_DATAVIEW_PYTHON:-/usr/bin/python3}"
+export CMUX_DATAVIEW_CONFIG="${CMUX_DATAVIEW_CONFIG:-$HOME/.config/cmux-dataview}"
+export CMUX_DATAVIEW_CACHE="${CMUX_DATAVIEW_CACHE:-$HOME/Library/Caches/cmux-dataview}"
+export CMUX_DATAVIEW_LOG="${CMUX_DATAVIEW_LOG:-$HOME/Library/Logs/cmux-dataview.log}"
+export CMUX_DATAVIEW_CMUX="$CMUX"
+export CMUX_QUIET=1
+LOG="$CMUX_DATAVIEW_LOG"
+DATA_EXT_DEFAULT="csv tsv tab psv json geojson jsonl ndjson"
+
+# Resolve our own directory through symlinks (Homebrew and ~/.local/bin installs symlink us).
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  link="$(readlink "$self")"
+  case "$link" in /*) self="$link" ;; *) self="$(cd -P "$(dirname "$self")" && pwd)/$link" ;; esac
+done
+ROOT="$(cd -P "$(dirname "$self")/.." && pwd)"
+LIB="$ROOT/lib"
+
+log() {
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null || return 0
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null || true
+}
+
+notify() {
+  /usr/bin/osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "cmux-dataview"' -e 'end run' "$1" >/dev/null 2>&1 || true
+}
+
+usage() {
+  cat <<EOF
+cmux-dataview $VERSION
+Open CSV, TSV, JSON and JSON Lines files as a sortable, searchable table in a cmux split.
+
+Usage
+  cmux-dataview <file>       open the file. Other file types go back to cmux
+  cmux-dataview --config     open the settings file
+  cmux-dataview --doctor     check that everything is wired up
+  cmux-dataview --stop       stop the background helper
+  cmux-dataview --version
+EOF
+}
+
+python_ok() {
+  # On a Mac without Command Line Tools, /usr/bin/python3 is a stub that pops an install dialog.
+  # Checking xcode-select avoids running the stub at all, and costs nothing on a double-click.
+  [ -x "$PY" ] || return 1
+  [ "$PY" != /usr/bin/python3 ] || /usr/bin/xcode-select -p >/dev/null 2>&1
+}
+
+# Non-data files go back where they would have gone. A nonzero exit makes cmux open the default app.
+fallback() {
+  local original="$1" mode="$2" path prior=""
+  path="$original"
+  [ -e "$path" ] || path="${original%:*}"
+  [ -e "$path" ] || path="${path%:*}"
+  [ -r "$CMUX_DATAVIEW_CONFIG/prior-editor" ] && prior="$(head -n 1 "$CMUX_DATAVIEW_CONFIG/prior-editor")"
+  case "$mode" in
+    priorEditor)
+      if [ -n "$prior" ] && [[ "$prior" != *bin/cmux-dataview* ]]; then
+        log "other file -> prior editor: $original"
+        /bin/sh -c "$prior \"\$1\"" sh "$original"
+        return $?
+      fi ;;
+    defaultApp)
+      log "other file -> default app: $path"
+      return 1 ;;
+  esac
+  if [ -x "$CMUX" ] && [ -e "$path" ]; then
+    log "other file -> cmux preview: $path"
+    "$CMUX" open "$path" >/dev/null 2>&1 && return 0
+  fi
+  log "other file -> handing back to cmux: $path"
+  return 1
+}
+
+stop_server() {
+  local state="$CMUX_DATAVIEW_CACHE/server.json" pid
+  if [ -r "$state" ]; then
+    pid="$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$state" 2>/dev/null)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" && echo "stopped helper $pid"; fi
+    rm -f "$state"
+  else
+    echo "helper not running"
+  fi
+}
+
+doctor() {
+  local ok=0 cfgf="$HOME/.config/cmux/cmux.json"
+  line() { printf '  %-5s %s\n' "$1" "$2"; }
+  check() { if eval "$2" >/dev/null 2>&1; then line ok "$1"; else line FAIL "$1"; ok=1; fi; }
+  echo "cmux-dataview $VERSION ($ROOT)"
+  check "cmux CLI at $CMUX" "[ -x '$CMUX' ]"
+  check "cmux is running and reachable" "'$CMUX' identify --json"
+  check "python 3.9+ at $PY (needs Xcode Command Line Tools)" python_ok
+  check "viewer and helper files present" "[ -r '$LIB/viewer.html' ] && [ -r '$LIB/dataview_server.py' ]"
+  check "helper can start" "'$PY' -I -c 'import sys; sys.path.insert(0, \"$LIB\"); import dataview_dispatch as d; d.ensure_server()'"
+  check "double-click routes to cmux-dataview" "grep -Eq '\"doubleClickAction\"[[:space:]]*:[[:space:]]*\"preferredEditor\"' '$cfgf'"
+  check "preferredEditor is cmux-dataview" "grep -q 'cmux-dataview' '$cfgf'"
+  line info "settings $CMUX_DATAVIEW_CONFIG/config.json"
+  line info "log $LOG"
+  return $ok
+}
+
+main() {
+  [ $# -eq 0 ] && { usage; return 2; }
+  case "$1" in
+    -h|--help) usage; return 0 ;;
+    --version) echo "$VERSION"; return 0 ;;
+    --doctor) doctor; return $? ;;
+    --stop) stop_server; return 0 ;;
+    --config)
+      local p; p="$("$PY" -I "$LIB/dataview_config.py" init)" && echo "$p" && /usr/bin/open -t "$p"; return 0 ;;
+    --) shift ;;
+  esac
+  [ $# -ge 1 ] || { usage; return 2; }
+  local original="$1" out rc ext
+  log "invoked: $original"
+  if ! python_ok; then
+    ext="$(printf '%s' "${original##*.}" | tr '[:upper:]' '[:lower:]')"
+    case " $DATA_EXT_DEFAULT " in *" $ext "*) notify "cmux-dataview needs Python 3. Run xcode-select --install" ;; esac
+    fallback "$original" preview
+    return $?
+  fi
+  out="$("$PY" -I "$LIB/dataview_dispatch.py" dispatch "$original" 2>>"$LOG")"
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    10) fallback "$original" "${out:-preview}"; return $? ;;
+  esac
+  notify "Could not open $(basename "$original") as a table. Showing the normal preview. Details in ~/Library/Logs/cmux-dataview.log"
+  fallback "$original" preview
+}
+
+main "$@"
