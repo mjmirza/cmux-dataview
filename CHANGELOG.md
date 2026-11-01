@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.1] - 2026-11-01
+
+### Changed
+- Column type badges read `abc`, `123`, `1.5` and `date`. Before, the type name was cut to three letters, so text showed as "tex".
+- Column stats round the mean to two decimals. Before, it showed four.
+- The helper stops after 10 idle minutes instead of 30, so it hands its memory back to macOS sooner.
+
+### Added
+- README walkthrough with screenshots of every feature, made with fake demo data in `docs/demo`.
+
 ## [0.1.0] - 2026-11-01
 
 ### Added

@@ -174,6 +174,7 @@ aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transf
   var query = "", colFilters = {}, sort = null;
   var qid = "", count = 0, generation = 0, pending = null;
   var cache = new Map(), inflight = new Set();
+  function typeLabel(t) { return ({ text: "abc", integer: "123", float: "1.5", number: "1.5", date: "date", bool: "y/n", boolean: "y/n" })[t] || String(t || "").slice(0, 4); }
   var sel = null, lastMtime = null, widths = [];
 
   function applyLook() {
@@ -203,7 +204,7 @@ aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transf
 
   function visibleCols() { var v = []; for (var i = 0; i < cols.length; i++) if (!hidden.has(i)) v.push(i); return v; }
   function computeWidths() {
-    widths = cols.map(function (c) { return Math.max(90, Math.min(420, (c.name.length + 6) * 7.4 + 18)); });
+    widths = cols.map(function (c) { return Math.max(90, Math.min(420, c.name.length * 8.4 + typeLabel(c.type).length * 6.4 + 58)); });
   }
   function growWidths(rows) {
     var changed = false;
@@ -218,7 +219,7 @@ aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transf
     vc.forEach(function (i) {
       var c = cols[i], arrow = "", aria = "none";
       if (sort && sort.col === i) { arrow = sort.dir > 0 ? "&#9650;" : "&#9660;"; aria = sort.dir > 0 ? "ascending" : "descending"; }
-      h1 += '<th scope="col" aria-sort="' + aria + '" data-c="' + i + '" title="' + esc(c.name) + " (" + c.type + '). Click to sort, right-click for stats"><div class="hname"><span class="n">' + esc(c.name) + '</span><span class="badge">' + esc(c.type.slice(0, 3)) + '</span><span class="arrow">' + arrow + "</span></div></th>";
+      h1 += '<th scope="col" aria-sort="' + aria + '" data-c="' + i + '" title="' + esc(c.name) + " (" + c.type + '). Click to sort, right-click for stats"><div class="hname"><span class="n">' + esc(c.name) + '</span><span class="badge">' + esc(typeLabel(c.type)) + '</span><span class="arrow">' + arrow + "</span></div></th>";
       var ph = c.numeric ? "> 10, 5..9, empty" : "contains, =exact, !not";
       h2 += '<th><input class="cf" data-f="' + i + '" value="' + esc(colFilters[i] || "") + '" placeholder="' + ph + '" aria-label="Filter ' + esc(c.name) + '"></th>';
     });
@@ -398,7 +399,7 @@ aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transf
   function showCols() {
     side.innerHTML = '<h2>Columns <button class="btn" id="sClose">Close</button></h2><div class="row"><button class="btn" id="sAll">Show all</button><button class="btn" id="sNone">Hide all</button></div><input class="search" id="sFind" placeholder="Find column" style="width:100%;margin-bottom:6px"><div class="collist" id="sList"></div>';
     function list(f) {
-      $("sList").innerHTML = cols.map(function (c, i) { if (f && c.name.toLowerCase().indexOf(f) === -1) return ""; return '<label><input type="checkbox" data-h="' + i + '"' + (hidden.has(i) ? "" : " checked") + "> " + esc(c.name) + ' <span class="badge">' + esc(c.type.slice(0, 3)) + "</span></label>"; }).join("");
+      $("sList").innerHTML = cols.map(function (c, i) { if (f && c.name.toLowerCase().indexOf(f) === -1) return ""; return '<label><input type="checkbox" data-h="' + i + '"' + (hidden.has(i) ? "" : " checked") + "> " + esc(c.name) + ' <span class="badge">' + esc(typeLabel(c.type)) + "</span></label>"; }).join("");
     }
     list("");
     $("sFind").oninput = function () { list(this.value.toLowerCase()); };
@@ -415,7 +416,7 @@ aside h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transf
     openSide(null);
     api("/api/stats?id=" + ID + "&col=" + i).then(function (s) {
       var items = [["Type", s.type], ["Rows", fmtInt(s.rows)], ["Empty", fmtInt(s.empty)], ["Unique", fmtInt(s.unique) + (s.uniqueCapped ? "+" : "")]];
-      if ("min" in s) items.push(["Min", fmtNum(s.min)], ["Max", fmtNum(s.max)], ["Mean", fmtNum(s.mean)], ["Sum", fmtNum(s.sum)]);
+      if ("min" in s) items.push(["Min", fmtNum(s.min)], ["Max", fmtNum(s.max)], ["Mean", fmtNum(Math.round(s.mean * 100) / 100)], ["Sum", fmtNum(s.sum)]);
       if ("first" in s) items.push(["Earliest", s.first], ["Latest", s.last]);
       if ("avgLength" in s) items.push(["Avg length", s.avgLength.toFixed(1)]);
       var top = (s.top || []).map(function (t) { return '<div class="stat"><span>' + esc(t[0] || "(empty)") + "</span><span>" + fmtInt(t[1]) + "</span></div>"; }).join("");
